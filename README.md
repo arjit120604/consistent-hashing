@@ -12,9 +12,7 @@ The implementation consists of the following components:
 *   **`RemoveNode`**: The `RemoveNode` function removes a node from the ring. It removes all of the virtual nodes for the node from the ring.
 *   **`GetNode`**: The `GetNode` function returns the node that is responsible for a given key. It hashes the key and then uses a binary search to find the first virtual node with a hash value that is greater than or equal to the hash of the key.
 
-## Issues and Fixes
-
-The initial implementation had two main issues:
+## Fixes
 
 1.  **Poor Key Distribution**: The `crc32` hash function did not provide a uniform distribution of keys and nodes on the ring. This caused some nodes to receive significantly more keys than others, which led to the `TestDistribution` test failing.
 
