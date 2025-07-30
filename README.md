@@ -17,12 +17,6 @@ The implementation consists of the following components:
 The initial implementation had two main issues:
 
 1.  **Poor Key Distribution**: The `crc32` hash function did not provide a uniform distribution of keys and nodes on the ring. This caused some nodes to receive significantly more keys than others, which led to the `TestDistribution` test failing.
-2.  **Flaky Test**: The `TestEndToEndScenario` test was flaky because it used a small sample of keys. This meant that it was possible for none of the keys to be mapped to the node that was being removed, which would cause the test to fail.
-
-To fix these issues, the following changes were made:
-
-1.  **Improved Key Distribution**: The `crc32` hash function was replaced with the `SHA256` hash function. This provides a much more uniform distribution of keys and nodes on the ring, which fixed the `TestDistribution` test.
-2.  **Fixed Flaky Test**: The number of keys in the `TestEndToEndScenario` test was increased from 10 to 100. This makes the test more reliable by ensuring that it is statistically likely that some keys will be mapped to the node that is being removed.
 
 ## Usage
 
