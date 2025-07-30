@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -34,17 +37,18 @@ func NewRing(virtualReplicas int) *Ring {
 // AddNode adds a new node to the ring.
 func (r *Ring) AddNode(id string) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	defer r.mu.Unlock()//ensures the lock is released after the funciton returns
 
+	//check if the node already exists
 	if _, ok := r.Nodes[id]; ok {
-		return // Node already exists
+		return
 	}
 
 	r.Nodes[id] = struct{}{}
 	for i := 0; i < r.virtualReplicas; i++ {
 		virtualID := id + "-" + strconv.Itoa(i)
 		hashBytes := sha256.Sum256([]byte(virtualID))
-		hash := binary.BigEndian.Uint32(hashBytes[:4])
+		hash := binary.BigEndian.Uint32(hashBytes[:4])//convert the first 4 bytes of the hash to uint32
 		r.virtualNodes = append(r.virtualNodes, virtualNode{ID: id, Hash: hash})
 	}
 	sort.Slice(r.virtualNodes, func(i, j int) bool {
@@ -62,13 +66,15 @@ func (r *Ring) RemoveNode(id string) {
 	}
 
 	delete(r.Nodes, id)
-	var newVirtualNodes []virtualNode
-	for _, vNode := range r.virtualNodes {
-		if vNode.ID != id {
-			newVirtualNodes = append(newVirtualNodes, vNode)
+
+	kept := 0
+	for i := range r.virtualNodes {
+		if r.virtualNodes[i].ID != id {
+			r.virtualNodes[kept] = r.virtualNodes[i]
+			kept++
 		}
 	}
-	r.virtualNodes = newVirtualNodes
+	r.virtualNodes = r.virtualNodes[:kept]//only keep the kept no of virtual nodes
 }
 
 // GetNode returns the node responsible for the given key.
@@ -93,26 +99,86 @@ func (r *Ring) GetNode(key string) string {
 }
 
 func main() {
-	ring := NewRing(10)
+	ring := NewRing(100)
+	fmt.Println("Consistent Hashing Interactive CLI")
+	fmt.Println("Commands: add <node>, remove <node>, get <key>, nodes, exit")
 
+	// Add some initial nodes
 	ring.AddNode("server1")
 	ring.AddNode("server2")
 	ring.AddNode("server3")
+	fmt.Println("Initial nodes: server1, server2, server3")
 
-	key1 := "my-key"
-	node1 := ring.GetNode(key1)
-	fmt.Printf("Key '%s' is mapped to node '%s'\n", key1, node1)
+	scanner := bufio.NewScanner(os.Stdin)
+	for {
+		fmt.Print("> ")
+		if !scanner.Scan() {
+			break
+		}
+		line := scanner.Text()
+		parts := strings.Fields(line)
+		if len(parts) == 0 {
+			continue
+		}
 
-	key2 := "another-key"
-	node2 := ring.GetNode(key2)
-	fmt.Printf("Key '%s' is mapped to node '%s'\n", key2, node2)
+		command := parts[0]
+		args := parts[1:]
 
-	fmt.Println("\nRemoving node 'server2'...")
-	ring.RemoveNode("server2")
+		switch command {
+		case "add":
+			if len(args) != 1 {
+				fmt.Println("Usage: add <node_id>")
+				continue
+			}
+			nodeID := args[0]
+			ring.AddNode(nodeID)
+			fmt.Printf("Added node '%s'\n", nodeID)
+		case "remove":
+			if len(args) != 1 {
+				fmt.Println("Usage: remove <node_id>")
+				continue
+			}
+			nodeID := args[0]
+			if _, ok := ring.Nodes[nodeID]; !ok {
+				fmt.Printf("Node '%s' does not exist\n", nodeID)
+				continue
+			}
+			ring.RemoveNode(nodeID)
+			fmt.Printf("Removed node '%s'\n", nodeID)
+		case "get":
+			if len(args) != 1 {
+				fmt.Println("Usage: get <key>")
+				continue
+			}
+			key := args[0]
+			node := ring.GetNode(key)
+			if node == "" {
+				fmt.Println("No nodes in the ring.")
+			} else {
+				fmt.Printf("Key '%s' is mapped to node '%s'\n", key, node)
+			}
+		case "nodes":
+			ring.mu.RLock()
+			nodes := make([]string, 0, len(ring.Nodes))
+			for nodeID := range ring.Nodes {
+				nodes = append(nodes, nodeID)
+			}
+			ring.mu.RUnlock()
+			sort.Strings(nodes) // Sort for consistent output
+			if len(nodes) == 0 {
+				fmt.Println("No nodes in the ring.")
+			} else {
+				fmt.Println("Current nodes:", strings.Join(nodes, ", "))
+			}
+		case "exit":
+			fmt.Println("Exiting.")
+			return
+		default:
+			fmt.Println("Unknown command. Available: add, remove, get, nodes, exit")
+		}
+	}
 
-	node1_after_removal := ring.GetNode(key1)
-	fmt.Printf("Key '%s' is now mapped to node '%s'\n", key1, node1_after_removal)
-
-	node2_after_removal := ring.GetNode(key2)
-	fmt.Printf("Key '%s' is now mapped to node '%s'\n", key2, node2_after_removal)
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintln(os.Stderr, "reading standard input:", err)
+	}
 }
